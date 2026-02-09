@@ -16,7 +16,7 @@ from aiogram.fsm.context import FSMContext
 
 
 # ================== НАСТРОЙКИ ==================
-BOT_TOKEN = = os.getenv("BOT_TOKEN")
+BOT_TOKEN = os.getenv("BOT_TOKEN")
 
 ADMIN_CHAT_ID = 6567991779
 CARDS_FOLDER = "cards"
@@ -181,3 +181,4 @@ async def main():
 
 if __name__ == "__main__":
     asyncio.run(main())
+
