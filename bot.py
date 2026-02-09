@@ -28,7 +28,8 @@ CONTACT_TEXT = (
     "Анжела проводит индивидуальные MAC-сессии.\n\n"
     "👤 Анжела Цой\n"
     "📞 +996 551 040 832\n"
-    "📸 Instagram: @anjela_tsoy_psy"
+    "📸 Instagram: @anjela_tsoy_psy\n"
+    "Telegram: @anjela_tsoy"
 )
 
 QUESTIONS = [
@@ -183,6 +184,7 @@ async def main():
 
 if __name__ == "__main__":
     asyncio.run(main())
+
 
 
 
