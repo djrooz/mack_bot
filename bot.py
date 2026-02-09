@@ -1,6 +1,24 @@
 import asyncio
 import random
 import os
+import threading
+
+from http.server import HTTPServer, BaseHTTPRequestHandler
+
+class DummyHandler(BaseHTTPRequestHandler):
+    def do_GET(self):
+        self.send_response(200)
+        self.end_headers()
+        self.wfile.write(b"Bot is running")
+
+def run_dummy_server():
+    port = int(os.getenv("PORT", 10000))
+    server = HTTPServer(("0.0.0.0", port), DummyHandler)
+    server.serve_forever()
+
+threading.Thread(target=run_dummy_server, daemon=True).start()
+# ==============================================
+
 
 from aiogram import Bot, Dispatcher, F
 from aiogram.types import (
@@ -181,4 +199,5 @@ async def main():
 
 if __name__ == "__main__":
     asyncio.run(main())
+
 
