@@ -1,26 +1,42 @@
 import asyncio
 import random
 import os
-
-
+import threading
+from http.server import HTTPServer, BaseHTTPRequestHandler
 
 from aiogram import Bot, Dispatcher, F
 from aiogram.types import (
     Message,
     FSInputFile,
-    InlineKeyboardMarkup,
-    InlineKeyboardButton,
-    CallbackQuery
+    ReplyKeyboardMarkup,
+    KeyboardButton
 )
 from aiogram.filters import CommandStart
 from aiogram.fsm.state import StatesGroup, State
 from aiogram.fsm.context import FSMContext
 
 
-# ================== НАСТРОЙКИ ==================
+# ================= RENDER DUMMY SERVER =================
+class DummyHandler(BaseHTTPRequestHandler):
+    def do_GET(self):
+        self.send_response(200)
+        self.end_headers()
+        self.wfile.write(b"Bot is running")
+
+def run_dummy_server():
+    port = int(os.getenv("PORT", 10000))
+    server = HTTPServer(("0.0.0.0", port), DummyHandler)
+    server.serve_forever()
+
+threading.Thread(target=run_dummy_server, daemon=True).start()
+# ======================================================
+
+
+# ================= НАСТРОЙКИ =================
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 
-ADMIN_CHAT_ID = 6567991779
+ADMIN_CHAT_ID = 6567991779  # Telegram ID Анжелы
+
 CARDS_FOLDER = "cards"
 
 CONTACT_TEXT = (
@@ -29,65 +45,62 @@ CONTACT_TEXT = (
     "👤 Анжела Цой\n"
     "📞 +996 551 040 832\n"
     "📸 Instagram: @anjela_tsoy_psy\n"
-    "Telegram: @anjela_tsoy"
+    "💬 Telegram: @anjela_tsoy"
 )
 
 QUESTIONS = [
-    "Что ты первым заметил(а) на карте?",
-    "Какие эмоции вызывает эта карта?",
-    "Есть ли на карте персонаж? Кто он для тебя?",
-    "Что на карте похоже на твою ситуацию?",
-    "Что на карте тебе не нравится или напрягает?",
-    "Где на карте ты, если представить себя внутри?",
-    "Чего не хватает на карте?",
-    "Что бы ты хотел(а) изменить на карте?",
-    "Как карта откликается на твой запрос?",
-    "Какое главное осознание у тебя сейчас?"
+    "1. Что ты первым заметил(а) на карте?",
+    "2. Какие эмоции вызывает эта карта?",
+    "3. Есть ли на карте персонаж? Кто он для тебя?",
+    "4. Что на карте похоже на твою ситуацию?",
+    "5. Что на карте тебе не нравится или напрягает?",
+    "6. Где на карте ты, если представить себя внутри?",
+    "7. Чего не хватает на карте?",
+    "8. Что бы ты хотел(а) изменить на карте?",
+    "9. Как карта откликается на твой запрос?",
+    "10. Какое главное осознание у тебя сейчас?"
 ]
 
-FINAL_KEYBOARD = InlineKeyboardMarkup(
-    inline_keyboard=[
-        [InlineKeyboardButton(text="✅ Да", callback_data="final_yes")],
-        [InlineKeyboardButton(text="🤔 Частично", callback_data="final_partial")],
-        [InlineKeyboardButton(text="❌ Нет", callback_data="final_no")]
-    ]
+FINAL_KEYBOARD = ReplyKeyboardMarkup(
+    keyboard=[
+        [KeyboardButton(text="✅ Да")],
+        [KeyboardButton(text="🤔 Частично")],
+        [KeyboardButton(text="❌ Нет")]
+    ],
+    resize_keyboard=True
 )
 
 
-# ================== FSM ==================
+# ================= FSM =================
 class Session(StatesGroup):
     request = State()
     question = State()
     final = State()
 
 
-# ================== BOT ==================
+# ================= BOT =================
 bot = Bot(BOT_TOKEN)
 dp = Dispatcher()
 
 
-# ================== START ==================
+# ================= HANDLERS =================
 @dp.message(CommandStart())
 async def start(message: Message, state: FSMContext):
     await state.clear()
     await message.answer(
         "Привет 👋\n\n"
         "Этот бот поможет тебе исследовать свой запрос с помощью MAC-карт.\n\n"
-        "✍️ Напиши свой запрос одним сообщением. \n\n" 
-        "После этого для тебя автоматически выйдет случайная карта."
+        "✍️ Напиши свой запрос одним сообщением, и для тебя выйдет случайная карта."
     )
     await state.set_state(Session.request)
 
 
-# ================== REQUEST ==================
-@dp.message(Session.request)
+@dp.message(Session.request, F.text)
 async def handle_request(message: Message, state: FSMContext):
     await state.update_data(
         user_request=message.text,
         answers=[],
-        question_index=0,
-        username=message.from_user.username,
-        user_id=message.from_user.id
+        question_index=0
     )
 
     cards = [
@@ -95,24 +108,39 @@ async def handle_request(message: Message, state: FSMContext):
         if f.lower().endswith((".jpg", ".jpeg", ".png"))
     ]
 
+    if not cards:
+        await message.answer("❌ В папке cards не найдено изображений.")
+        return
+
     card = random.choice(cards)
     await state.update_data(card=card)
 
+    photo_path = os.path.join(CARDS_FOLDER, card)
+
     await message.answer_photo(
-        FSInputFile(os.path.join(CARDS_FOLDER, card)),
-        caption="Посмотри на карту.\nОпиши, что ты видишь и что чувствуешь."
+        photo=FSInputFile(photo_path),
+        caption="Посмотри на карту.\nОпиши, что ты видишь и чувствуешь."
     )
 
-    await message.answer(f"1. {QUESTIONS[0]}")
+    await message.answer(QUESTIONS[0])
     await state.set_state(Session.question)
 
 
-# ================== QUESTIONS ==================
-@dp.message(Session.question)
+@dp.message(Session.question, F.text)
 async def handle_questions(message: Message, state: FSMContext):
     data = await state.get_data()
-    answers = data["answers"]
-    index = data["question_index"]
+
+    answers = data.get("answers", [])
+    index = data.get("question_index", 0)
+
+    # защита от сбоев
+    if index >= len(QUESTIONS):
+        await message.answer(
+            "Удалось ли тебе найти ответ или направление для своего запроса?",
+            reply_markup=FINAL_KEYBOARD
+        )
+        await state.set_state(Session.final)
+        return
 
     answers.append(message.text)
     index += 1
@@ -120,71 +148,41 @@ async def handle_questions(message: Message, state: FSMContext):
     await state.update_data(answers=answers, question_index=index)
 
     if index < len(QUESTIONS):
-        await message.answer(f"{index+1}. {QUESTIONS[index]}")
+        await message.answer(QUESTIONS[index])
     else:
-        await state.set_state(Session.final)
         await message.answer(
             "Удалось ли тебе найти ответ или направление для своего запроса?",
             reply_markup=FINAL_KEYBOARD
         )
+        await state.set_state(Session.final)
 
 
-# ================== FINAL ==================
-@dp.callback_query(F.data.startswith("final_"))
-async def handle_final(call: CallbackQuery, state: FSMContext):
-    await call.answer("Спасибо 🙏")
-
+@dp.message(Session.final, F.text)
+async def handle_final(message: Message, state: FSMContext):
     data = await state.get_data()
 
-    final_map = {
-        "final_yes": "Да",
-        "final_partial": "Частично",
-        "final_no": "Нет"
-    }
-    final_answer = final_map.get(call.data, call.data)
-
-    username = f"@{data['username']}" if data["username"] else "не указан"
-    user_info = f"{username} (ID: {data['user_id']})"
-
-    # 1️⃣ отправляем КАРТУ Анжеле
-    try:
-        await bot.send_photo(
-            ADMIN_CHAT_ID,
-            FSInputFile(os.path.join(CARDS_FOLDER, data["card"])),
-            caption=f"🃏 Карта: {data['card']}"
-        )
-    except Exception as e:
-        print("Ошибка отправки карты:", e)
-
-    # 2️⃣ формируем текст с вопросами и ответами
-    text = (
+    report = (
         "🧠 НОВАЯ MAC-СЕССИЯ\n\n"
-        f"👤 Клиент:\n{user_info}\n\n"
-        f"📝 Запрос:\n{data['user_request']}\n\n"
-        "Вопросы и ответы:\n\n"
+        f"👤 Клиент: @{message.from_user.username or 'без username'}\n\n"
+        f"📌 Запрос:\n{data['user_request']}\n\n"
+        f"🃏 Карта: {data['card']}\n\n"
+        "✍️ Ответы:\n"
     )
 
-    for i, (q, a) in enumerate(zip(QUESTIONS, data["answers"]), 1):
-        text += f"{i}. {q}\n— {a}\n\n"
+    for q, a in zip(QUESTIONS, data["answers"]):
+        report += f"\n{q}\n— {a}\n"
 
-    text += f"🔚 Финальный ответ:\n{final_answer}"
+    report += f"\n🔚 Финальный ответ клиента: {message.text}"
 
-    await bot.send_message(ADMIN_CHAT_ID, text)
+    await bot.send_message(ADMIN_CHAT_ID, report)
 
-    # клиенту — контакты
-    await call.message.edit_reply_markup(reply_markup=None)
-    await call.message.answer(CONTACT_TEXT)
-
+    await message.answer(CONTACT_TEXT, reply_markup=None)
     await state.clear()
 
 
-# ================== RUN ==================
+# ================= RUN =================
 async def main():
     await dp.start_polling(bot)
 
 if __name__ == "__main__":
     asyncio.run(main())
-
-
-
-
