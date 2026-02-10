@@ -41,13 +41,11 @@ def run_dummy_server():
     logging.info(f"🌐 Dummy server running on port {port}")
     server.serve_forever()
 
-threading.Thread(target=run_dummy_server, daemon=True).start()
-# ======================================================
-
 
 # ================= ENV =================
 BOT_TOKEN = os.getenv("BOT_TOKEN")
-assert BOT_TOKEN, "❌ BOT_TOKEN is missing"
+if not BOT_TOKEN:
+    raise RuntimeError("❌ BOT_TOKEN is missing in Environment Variables")
 
 ADMIN_CHAT_ID = 6567991779  # Telegram ID Анжелы
 
@@ -101,18 +99,18 @@ dp = Dispatcher()
 @dp.message(CommandStart())
 async def start(message: Message, state: FSMContext):
     await state.clear()
- await message.answer(
-    "Привет 👋\n\n"
-    "Этот бот поможет тебе исследовать свой запрос с помощью MAC-карт.\n\n"
-    "✍️ Напиши свой запрос одним сообщением, и для тебя выйдет случайная карта."
-)
+    await message.answer(
+        "Привет 👋\n\n"
+        "Этот бот поможет тебе исследовать свой запрос с помощью MAC-карт.\n\n"
+        "✍️ Напиши свой запрос одним сообщением, и для тебя выйдет случайная карта."
+    )
     await state.set_state(Session.request)
 
 
 @dp.message(Session.request, F.text)
 async def handle_request(message: Message, state: FSMContext):
     if not os.path.exists(CARDS_FOLDER):
-        await message.answer("❌ Папка с картами не найдена на сервере.")
+        await message.answer("❌ Папка с картами не найдена.")
         return
 
     cards = [
@@ -124,7 +122,8 @@ async def handle_request(message: Message, state: FSMContext):
         await message.answer("❌ В папке cards нет изображений.")
         return
 
-    card = random.choice(cards)
+    random.shuffle(cards)
+    card = cards[0]
     photo_path = os.path.join(CARDS_FOLDER, card)
 
     await state.update_data(
@@ -136,9 +135,13 @@ async def handle_request(message: Message, state: FSMContext):
 
     await message.answer_photo(
         photo=FSInputFile(photo_path),
-        caption="Посмотри на карту 20–30 секунд.\n"
-        "Опиши подробно: что ты видишь (детали, цвета, образы) и какие чувства это вызывает.\n"
-        "Пиши как можно конкретнее."
+        caption=(
+            "Сделай паузу и внимательно рассмотри карту 20–30 секунд.\n\n"
+            "Опиши как можно подробнее:\n"
+            "• что ты видишь (детали, цвета, образы)\n"
+            "• какие мысли и чувства появляются\n\n"
+            "Пиши свободно, здесь нет правильных или неправильных ответов."
+        )
     )
 
     await message.answer(QUESTIONS[0])
@@ -149,8 +152,16 @@ async def handle_request(message: Message, state: FSMContext):
 async def handle_questions(message: Message, state: FSMContext):
     data = await state.get_data()
 
-    answers = data["answers"]
-    index = data["question_index"]
+    answers = data.get("answers", [])
+    index = data.get("question_index", 0)
+
+    if index >= len(QUESTIONS):
+        await message.answer(
+            "Удалось ли тебе найти ответ или направление для своего запроса?",
+            reply_markup=FINAL_KEYBOARD
+        )
+        await state.set_state(Session.final)
+        return
 
     answers.append(message.text)
     index += 1
@@ -192,10 +203,15 @@ async def handle_final(message: Message, state: FSMContext):
 # ================= RUN =================
 async def main():
     logging.info("🤖 Bot polling started")
+
+    # Dummy server для Render Free
+    threading.Thread(
+        target=run_dummy_server,
+        daemon=True
+    ).start()
+
     await dp.start_polling(bot)
+
 
 if __name__ == "__main__":
     asyncio.run(main())
-
-
-
