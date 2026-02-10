@@ -9,9 +9,9 @@ from aiogram import Bot, Dispatcher, F
 from aiogram.types import (
     Message,
     FSInputFile,
-    ReplyKeyboardMarkup,
-    KeyboardButton,
-    ReplyKeyboardRemove
+    InlineKeyboardMarkup,
+    InlineKeyboardButton,
+    CallbackQuery
 )
 from aiogram.filters import CommandStart
 from aiogram.fsm.state import StatesGroup, State
@@ -73,14 +73,12 @@ QUESTIONS = [
     "10. Какое главное осознание у тебя сейчас?"
 ]
 
-FINAL_KEYBOARD = ReplyKeyboardMarkup(
-    keyboard=[
-        [KeyboardButton(text="✅ Да")],
-        [KeyboardButton(text="🤔 Частично")],
-        [KeyboardButton(text="❌ Нет")]
-    ],
-    resize_keyboard=True,
-    is_persistent=True
+FINAL_INLINE_KEYBOARD = InlineKeyboardMarkup(
+    inline_keyboard=[
+        [InlineKeyboardButton(text="✅ Да", callback_data="final_yes")],
+        [InlineKeyboardButton(text="🤔 Частично", callback_data="final_partial")],
+        [InlineKeyboardButton(text="❌ Нет", callback_data="final_no")]
+    ]
 )
 
 
@@ -141,7 +139,7 @@ async def handle_request(message: Message, state: FSMContext):
             "Опиши как можно подробнее:\n"
             "• что ты видишь (детали, цвета, образы)\n"
             "• какие мысли и чувства появляются\n\n"
-            "Пиши свободно, здесь нет правильных или неправильных ответов."
+            "Пиши свободно — здесь нет правильных или неправильных ответов."
         )
     )
 
@@ -156,14 +154,6 @@ async def handle_questions(message: Message, state: FSMContext):
     answers = data.get("answers", [])
     index = data.get("question_index", 0)
 
-    if index >= len(QUESTIONS):
-        await message.answer(
-            "Удалось ли тебе найти ответ или направление для своего запроса?",
-            reply_markup=FINAL_KEYBOARD
-        )
-        await state.set_state(Session.final)
-        return
-
     answers.append(message.text)
     index += 1
 
@@ -174,18 +164,26 @@ async def handle_questions(message: Message, state: FSMContext):
     else:
         await message.answer(
             "Удалось ли тебе найти ответ или направление для своего запроса?",
-            reply_markup=FINAL_KEYBOARD
+            reply_markup=FINAL_INLINE_KEYBOARD
         )
         await state.set_state(Session.final)
 
 
-@dp.message(Session.final, F.text.in_(["✅ Да", "🤔 Частично", "❌ Нет"]))
-async def handle_final(message: Message, state: FSMContext):
+@dp.callback_query(Session.final, F.data.in_(["final_yes", "final_partial", "final_no"]))
+async def handle_final_callback(call: CallbackQuery, state: FSMContext):
     data = await state.get_data()
+
+    answer_map = {
+        "final_yes": "Да",
+        "final_partial": "Частично",
+        "final_no": "Нет"
+    }
+
+    final_answer = answer_map[call.data]
 
     report = (
         "🧠 НОВАЯ MAC-СЕССИЯ\n\n"
-        f"👤 Клиент: @{message.from_user.username or 'без username'}\n\n"
+        f"👤 Клиент: @{call.from_user.username or 'без username'}\n\n"
         f"📌 Запрос:\n{data['user_request']}\n\n"
         f"🃏 Карта: {data['card']}\n\n"
         "✍️ Ответы:\n"
@@ -194,10 +192,11 @@ async def handle_final(message: Message, state: FSMContext):
     for q, a in zip(QUESTIONS, data["answers"]):
         report += f"\n{q}\n— {a}\n"
 
-    report += f"\n🔚 Финальный ответ клиента: {message.text}"
+    report += f"\n🔚 Финальный ответ клиента: {final_answer}"
 
     await bot.send_message(ADMIN_CHAT_ID, report)
-    await message.answer(CONTACT_TEXT, reply_markup=ReplyKeyboardRemove())
+    await call.message.answer(CONTACT_TEXT)
+    await call.answer()
     await state.clear()
 
 
@@ -216,4 +215,3 @@ async def main():
 
 if __name__ == "__main__":
     asyncio.run(main())
-
