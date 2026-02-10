@@ -2,6 +2,7 @@ import asyncio
 import random
 import os
 import threading
+import logging
 from http.server import HTTPServer, BaseHTTPRequestHandler
 
 from aiogram import Bot, Dispatcher, F
@@ -9,11 +10,22 @@ from aiogram.types import (
     Message,
     FSInputFile,
     ReplyKeyboardMarkup,
-    KeyboardButton
+    KeyboardButton,
+    ReplyKeyboardRemove
 )
 from aiogram.filters import CommandStart
 from aiogram.fsm.state import StatesGroup, State
 from aiogram.fsm.context import FSMContext
+
+
+# ================= LOGGING =================
+logging.basicConfig(level=logging.INFO)
+logging.info("🚀 Starting bot...")
+
+
+# ================= PATHS =================
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+CARDS_FOLDER = os.path.join(BASE_DIR, "cards")
 
 
 # ================= RENDER DUMMY SERVER =================
@@ -26,19 +38,21 @@ class DummyHandler(BaseHTTPRequestHandler):
 def run_dummy_server():
     port = int(os.getenv("PORT", 10000))
     server = HTTPServer(("0.0.0.0", port), DummyHandler)
+    logging.info(f"🌐 Dummy server running on port {port}")
     server.serve_forever()
 
 threading.Thread(target=run_dummy_server, daemon=True).start()
 # ======================================================
 
 
-# ================= НАСТРОЙКИ =================
+# ================= ENV =================
 BOT_TOKEN = os.getenv("BOT_TOKEN")
+assert BOT_TOKEN, "❌ BOT_TOKEN is missing"
 
 ADMIN_CHAT_ID = 6567991779  # Telegram ID Анжелы
 
-CARDS_FOLDER = "cards"
 
+# ================= TEXT =================
 CONTACT_TEXT = (
     "✨ Если хочешь глубже разобрать свой запрос,\n"
     "Анжела проводит индивидуальные MAC-сессии.\n\n"
@@ -90,18 +104,16 @@ async def start(message: Message, state: FSMContext):
     await message.answer(
         "Привет 👋\n\n"
         "Этот бот поможет тебе исследовать свой запрос с помощью MAC-карт.\n\n"
-        "✍️ Напиши свой запрос одним сообщением, и для тебя выйдет случайная карта."
+        "✍️ Напиши свой запрос одним сообщением."
     )
     await state.set_state(Session.request)
 
 
 @dp.message(Session.request, F.text)
 async def handle_request(message: Message, state: FSMContext):
-    await state.update_data(
-        user_request=message.text,
-        answers=[],
-        question_index=0
-    )
+    if not os.path.exists(CARDS_FOLDER):
+        await message.answer("❌ Папка с картами не найдена на сервере.")
+        return
 
     cards = [
         f for f in os.listdir(CARDS_FOLDER)
@@ -109,13 +121,18 @@ async def handle_request(message: Message, state: FSMContext):
     ]
 
     if not cards:
-        await message.answer("❌ В папке cards не найдено изображений.")
+        await message.answer("❌ В папке cards нет изображений.")
         return
 
     card = random.choice(cards)
-    await state.update_data(card=card)
-
     photo_path = os.path.join(CARDS_FOLDER, card)
+
+    await state.update_data(
+        user_request=message.text,
+        card=card,
+        answers=[],
+        question_index=0
+    )
 
     await message.answer_photo(
         photo=FSInputFile(photo_path),
@@ -130,17 +147,8 @@ async def handle_request(message: Message, state: FSMContext):
 async def handle_questions(message: Message, state: FSMContext):
     data = await state.get_data()
 
-    answers = data.get("answers", [])
-    index = data.get("question_index", 0)
-
-    # защита от сбоев
-    if index >= len(QUESTIONS):
-        await message.answer(
-            "Удалось ли тебе найти ответ или направление для своего запроса?",
-            reply_markup=FINAL_KEYBOARD
-        )
-        await state.set_state(Session.final)
-        return
+    answers = data["answers"]
+    index = data["question_index"]
 
     answers.append(message.text)
     index += 1
@@ -157,7 +165,7 @@ async def handle_questions(message: Message, state: FSMContext):
         await state.set_state(Session.final)
 
 
-@dp.message(Session.final, F.text)
+@dp.message(Session.final, F.text.in_(["✅ Да", "🤔 Частично", "❌ Нет"]))
 async def handle_final(message: Message, state: FSMContext):
     data = await state.get_data()
 
@@ -175,15 +183,14 @@ async def handle_final(message: Message, state: FSMContext):
     report += f"\n🔚 Финальный ответ клиента: {message.text}"
 
     await bot.send_message(ADMIN_CHAT_ID, report)
-
-    await message.answer(CONTACT_TEXT, reply_markup=None)
+    await message.answer(CONTACT_TEXT, reply_markup=ReplyKeyboardRemove())
     await state.clear()
 
 
 # ================= RUN =================
 async def main():
+    logging.info("🤖 Bot polling started")
     await dp.start_polling(bot)
 
 if __name__ == "__main__":
     asyncio.run(main())
-
