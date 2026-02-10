@@ -79,7 +79,8 @@ FINAL_KEYBOARD = ReplyKeyboardMarkup(
         [KeyboardButton(text="🤔 Частично")],
         [KeyboardButton(text="❌ Нет")]
     ],
-    resize_keyboard=True
+    resize_keyboard=True,
+    is_persistent=True
 )
 
 
@@ -215,3 +216,4 @@ async def main():
 
 if __name__ == "__main__":
     asyncio.run(main())
+
