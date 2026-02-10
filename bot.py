@@ -137,7 +137,9 @@ async def handle_request(message: Message, state: FSMContext):
 
     await message.answer_photo(
         photo=FSInputFile(photo_path),
-        caption="Посмотри на карту.\nОпиши, что ты видишь и чувствуешь."
+        caption="Посмотри на карту 20–30 секунд.\n"
+        "Опиши подробно: что ты видишь (детали, цвета, образы) и какие чувства это вызывает.\n"
+        "Пиши как можно конкретнее."
     )
 
     await message.answer(QUESTIONS[0])
@@ -195,4 +197,5 @@ async def main():
 
 if __name__ == "__main__":
     asyncio.run(main())
+
 
